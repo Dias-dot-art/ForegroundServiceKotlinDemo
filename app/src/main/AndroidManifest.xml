@@ -2,6 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Required for starting foreground services (all versions) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Required on Android 13 (API 33) and above for showing notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -21,6 +28,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".MyForegroundService"
+            android:enabled="true"
+            android:exported="false" />
+        <!-- exported=false because only this app starts it -->
+        <!-- android:foregroundServiceType="dataSync"  (Optional: Add type for Android 10+) -->
     </application>
 
 </manifest>
