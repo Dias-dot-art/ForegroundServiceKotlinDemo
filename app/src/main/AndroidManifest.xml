@@ -31,9 +31,10 @@
         <service
             android:name=".MyForegroundService"
             android:enabled="true"
-            android:exported="false" />
-        <!-- exported=false because only this app starts it -->
-        <!-- android:foregroundServiceType="dataSync"  (Optional: Add type for Android 10+) -->
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            tools:ignore="ForegroundServicePermission" >
+        </service>
     </application>
 
 </manifest>

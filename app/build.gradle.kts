@@ -35,13 +35,13 @@ android {
     }
 
     buildFeatures {
-        viewBinding true;
+        viewBinding = true
     }
 }
 
 dependencies {
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3") // Use the latest stable version
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
