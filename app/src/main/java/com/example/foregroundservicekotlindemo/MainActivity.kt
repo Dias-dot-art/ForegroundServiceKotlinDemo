@@ -116,7 +116,12 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         // Register the BroadcastReceiver
         val filter = IntentFilter(MyForegroundService.ACTION_BROADCAST)
-        registerReceiver(counterReceiver, filter)
+        ContextCompat.registerReceiver(
+            this,
+            counterReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         Log.d(TAG, "BroadcastReceiver registered")
     }
 
