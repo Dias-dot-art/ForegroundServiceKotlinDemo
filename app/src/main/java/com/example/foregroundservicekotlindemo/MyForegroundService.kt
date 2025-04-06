@@ -35,35 +35,56 @@ class MyForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "Service onStartCommand")
 
+        // Create the initial notification
         val notification = createNotification("Service Running...")
+        // Promote the service to foreground
         startForeground(NOTIFICATION_ID, notification)
+        Log.i(TAG,"Service started in foreground.")
 
         if (!isServiceRunning) {
             isServiceRunning = true
             startCounter()
+            Log.i(TAG,"Counter coroutine started.")
+        } else {
+            Log.i(TAG,"Service already running, not starting new counter.")
         }
 
-        // If the service is killed, restart it
+        // If the service is killed, restart it automatically
         return START_STICKY
     }
 
     private fun startCounter() {
         serviceScope.launch {
-            while (isServiceRunning) {
-                counter++
-                Log.i(TAG, "Counter: $counter, Thread ID: ${Thread.currentThread().id}")
+            Log.d(TAG, "Counter loop starting on thread: ${Thread.currentThread().name}")
+            while (isServiceRunning && isActive) { // Check isActive for coroutine cancellation
+                try {
+                    counter++
+                    Log.d(TAG, "Counter: $counter, Thread ID: ${Thread.currentThread().id}")
 
-                // Send counter value back to Activity
-                val broadcastIntent = Intent(ACTION_BROADCAST).apply {
-                    putExtra(EXTRA_COUNTER, counter)
+                    // Send counter value back to Activity
+                    val broadcastIntent = Intent(ACTION_BROADCAST).apply {
+                        putExtra(EXTRA_COUNTER, counter)
+                    }
+                    sendBroadcast(broadcastIntent)
+
+                    // Optional: Update notification text
+                    // updateNotification("Counter: $counter")
+
+                    delay(1000) // Delay for 1 second
+                } catch (e: CancellationException) {
+                    Log.i(TAG, "Counter coroutine cancelled.")
+                    break // Exit loop if cancelled
+                } catch (e: InterruptedException) {
+                    Log.i(TAG, "Counter coroutine interrupted.")
+                    Thread.currentThread().interrupt() // Restore interrupt status
+                    break // Exit loop if interrupted
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in counter loop", e)
+                    // Decide how to handle other errors, maybe stop the service or retry
+                    isServiceRunning = false // Stop running on unexpected error
                 }
-                sendBroadcast(broadcastIntent)
-
-                // Update notification text (optional)
-                // updateNotification("Counter: $counter")
-
-                delay(1000) // Delay for 1 second
             }
+            Log.d(TAG, "Counter loop finished.")
         }
     }
 
@@ -73,7 +94,14 @@ class MyForegroundService : Service() {
         isServiceRunning = false
         serviceJob.cancel() // Cancel all coroutines started in this scope
         Log.i(TAG, "Coroutines cancelled.")
-        stopForeground(true) // Remove notification
+        // stopForeground(true) is deprecated, use stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        Log.i(TAG,"Foreground state stopped, notification removed.")
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -82,38 +110,55 @@ class MyForegroundService : Service() {
     }
 
     private fun createNotificationChannel() {
-        // Create the NotificationChannel, but only on API 26+ because
-        // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
                 "Foreground Service Channel",
-                NotificationManager.IMPORTANCE_DEFAULT // Importance level
-            )
+                NotificationManager.IMPORTANCE_LOW // Use LOW to avoid sound/vibration by default
+            ).apply {
+                description = "Channel for Foreground Service Example"
+                // Optionally disable sound/vibration
+                // setSound(null, null)
+                // enableVibration(false)
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(serviceChannel)
             Log.i(TAG, "Notification Channel Created")
+        } else {
+            Log.i(TAG, "Notification Channel not needed for API < 26")
         }
     }
 
     private fun createNotification(contentText: String): Notification {
         // Intent to launch when notification is tapped (optional)
-        // val notificationIntent = Intent(this, MainActivity::class.java)
-        // val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
+        val notificationIntent = Intent(this, MainActivity::class.java)
+        // Ensure FLAG_IMMUTABLE or FLAG_MUTABLE is set based on needs (IMMUTABLE recommended)
+        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingIntentFlags)
+
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Foreground Service Active")
+            .setContentTitle("Counter Service")
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Replace with your own icon
-            // .setContentIntent(pendingIntent) // Uncomment to make notification clickable
-            .setOnlyAlertOnce(true) // Don't sound/vibrate for updates
+            // Make sure you have 'ic_notification' or use a default like 'ic_launcher_foreground'
+            // You might need to create this drawable resource.
+            .setSmallIcon(android.R.drawable.ic_dialog_info) // Placeholder icon
+            .setContentIntent(pendingIntent) // Make notification clickable -> opens MainActivity
+            .setOnlyAlertOnce(true) // Don't sound/vibrate for updates if notification exists
+            .setOngoing(true) // Indicates it's an ongoing task
             .build()
     }
 
-    // Optional: Function to update existing notification
+    // Optional: Function to update existing notification efficiently
     private fun updateNotification(contentText: String) {
         val notification = createNotification(contentText)
         val notificationManager = getSystemService(NotificationManager::class.java)
+        // Use the same NOTIFICATION_ID to update the existing notification
         notificationManager?.notify(NOTIFICATION_ID, notification)
+        Log.d(TAG, "Notification updated with text: $contentText")
     }
 }
