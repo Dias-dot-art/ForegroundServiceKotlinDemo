@@ -1,5 +1,6 @@
 package com.example.foregroundservicekotlindemo // Adjust package name if needed
 
+import android.Manifest // Import Manifest class
 import android.content.*
 import android.content.pm.PackageManager
 import android.os.Build
@@ -15,7 +16,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var serviceIntent: Intent
-    private var counter = 0
+    private var currentCounter = 0 // Store last known counter value for persistence
 
     private val TAG = "MainActivity"
 
@@ -28,37 +29,39 @@ class MainActivity : AppCompatActivity() {
             startService() // Proceed to start service after permission granted
         } else {
             Log.w(TAG, "POST_NOTIFICATIONS permission denied.")
-            Toast.makeText(this, "Notification permission denied. Service cannot show notification.", Toast.LENGTH_LONG).show()
-            // Handle the case where the user denies the permission
-            // You might want to explain why the permission is needed
+            Toast.makeText(this, "Notification permission denied. Service cannot show status notification.", Toast.LENGTH_LONG).show()
+            // Explain why it's needed or disable functionality
         }
     }
 
     private fun askNotificationPermission() {
-        // This is only necessary for API level >= 33 (TIRAMISU)
+        // Only needed for Android 13 (API level 33) and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when {
                 ContextCompat.checkSelfPermission(
                     this,
-                    android.Manifest.permission.POST_NOTIFICATIONS
+                    Manifest.permission.POST_NOTIFICATIONS // Use Manifest.permission
                 ) == PackageManager.PERMISSION_GRANTED -> {
                     Log.i(TAG, "POST_NOTIFICATIONS permission already granted.")
                     startService() // Permission already granted, start the service
                 }
-                shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS) -> {
-                    // Explain to the user why the permission is needed
+                shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
+                    // Show UI explaining why the permission is needed
                     Toast.makeText(this, "Notification permission is required to show service status.", Toast.LENGTH_LONG).show()
                     // Then request the permission
-                    requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    Log.i(TAG, "Showing rationale and requesting POST_NOTIFICATIONS permission.")
+                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 else -> {
-                    // Directly ask for the permission
-                    Log.i(TAG, "Requesting POST_NOTIFICATIONS permission.")
-                    requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    // Directly ask for the permission the first time or if rationale shouldn't be shown
+                    Log.i(TAG, "Requesting POST_NOTIFICATIONS permission directly.")
+                    requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
         } else {
-            startService() // No runtime permission needed for older versions
+            // No runtime permission needed for notifications below Android 13
+            Log.i(TAG, "Notification permission not required for this Android version.")
+            startService()
         }
     }
     // --- End Notification Permission Handling ---
@@ -67,6 +70,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        Log.d(TAG, "onCreate")
+
+        // Restore counter value if Activity is recreated
+        savedInstanceState?.let {
+            currentCounter = it.getInt("counterValue", 0)
+            updateCounterText(currentCounter) // Update UI with restored value
+        }
 
         serviceIntent = Intent(this, MyForegroundService::class.java)
 
@@ -81,14 +91,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Save counter value when Activity might be destroyed
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("counterValue", currentCounter)
+        Log.d(TAG, "onSaveInstanceState: Saving counter $currentCounter")
+    }
+
+
     private fun startService() {
         Log.i(TAG,"Attempting to start service...")
-        // For Android 8 (Oreo) and above, startForegroundService is required
-        // for starting services when the app is not in the foreground.
-        // It requires the service to call startForeground() within 5 seconds.
         try {
             ContextCompat.startForegroundService(this, serviceIntent)
             Log.i(TAG,"startForegroundService called.")
+            // Optionally update UI immediately, though receiver will update it too
+            binding.textViewCounter.text = "Service Starting..."
         } catch (e: Exception) {
             Log.e(TAG, "Error starting service: ${e.message}", e)
             Toast.makeText(this, "Error starting service: ${e.message}", Toast.LENGTH_LONG).show()
@@ -97,38 +114,70 @@ class MainActivity : AppCompatActivity() {
 
     private fun stopService() {
         Log.i(TAG,"Attempting to stop service...")
-        stopService(serviceIntent)
-        binding.textViewCounter.text = "Service Stopped" // Reset UI immediately
+        try {
+            stopService(serviceIntent)
+            binding.textViewCounter.text = "Service Stopped" // Reset UI immediately
+            currentCounter = 0 // Reset counter value
+            Log.i(TAG,"stopService called.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping service: ${e.message}", e)
+            Toast.makeText(this, "Error stopping service: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     // BroadcastReceiver to get updates from the service
     private val counterReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == MyForegroundService.ACTION_BROADCAST) {
-                counter = intent.getIntExtra(MyForegroundService.EXTRA_COUNTER, 0)
-                binding.textViewCounter.text = "Counter: $counter"
-                Log.d(TAG, "Received counter update: $counter")
+                val receivedCounter = intent.getIntExtra(MyForegroundService.EXTRA_COUNTER, 0)
+                currentCounter = receivedCounter // Update stored counter
+                updateCounterText(currentCounter)
+                Log.d(TAG, "BroadcastReceiver: Received counter update: $currentCounter")
             }
         }
     }
 
+    private fun updateCounterText(count: Int) {
+        binding.textViewCounter.text = if (count > 0) "Counter: $count" else "Service Stopped"
+    }
+
     override fun onStart() {
         super.onStart()
+        Log.d(TAG, "onStart: Registering receiver")
         // Register the BroadcastReceiver
         val filter = IntentFilter(MyForegroundService.ACTION_BROADCAST)
-        ContextCompat.registerReceiver(
-            this,
-            counterReceiver,
-            filter,
+        // Use RECEIVER_NOT_EXPORTED for security on Android 13+ if the receiver is only used internally
+        val receiverFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.RECEIVER_NOT_EXPORTED
-        )
-        Log.d(TAG, "BroadcastReceiver registered")
+        } else {
+            0 // No flag needed for older versions in this case
+        }
+        ContextCompat.registerReceiver(this, counterReceiver, filter, receiverFlags)
+
+        // Optional: Check if service is already running when activity starts/resumes
+        // This requires a more complex check (e.g., static flag, querying ActivityManager - not recommended)
+        // The broadcast receiver handles updating the UI if the service *is* running.
+        // If the service was stopped, the UI should reflect that (set in stopService).
+        // We update the text here based on the last known value, which might be from onSaveInstanceState
+        updateCounterText(currentCounter)
     }
 
     override fun onStop() {
         super.onStop()
+        Log.d(TAG, "onStop: Unregistering receiver")
         // Unregister the BroadcastReceiver
-        unregisterReceiver(counterReceiver)
-        Log.d(TAG, "BroadcastReceiver unregistered")
+        try {
+            unregisterReceiver(counterReceiver)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Receiver already unregistered or never registered.", e)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy")
+        // Note: Service might continue running if started and not explicitly stopped
+        // If you want service to stop when activity is destroyed (not usually desired for foreground service):
+        // stopService()
     }
 }
