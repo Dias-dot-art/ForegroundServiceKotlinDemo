@@ -2,12 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Required for starting foreground services (all versions) -->
+    <!-- Required for Foreground Services (all versions) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
-    <!-- Required on Android 13 (API 33) and above for showing notifications -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Required for starting foreground services from background on Android 14+ -->
+    <!-- Choose the appropriate type, dataSync is reasonable for a counter -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+
+    <!-- Required for showing notifications on Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:allowBackup="true"
@@ -19,22 +23,25 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ForegroundServiceKotlinDemo"
         tools:targetApi="31">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Declare the Service -->
         <service
             android:name=".MyForegroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            tools:ignore="ForegroundServicePermission" >
-        </service>
+            />
+        <!-- foregroundServiceType is required for targetSdk 34+ but declared via permission now -->
+        <!-- android:foregroundServiceType="dataSync" -->
+
     </application>
 
 </manifest>
